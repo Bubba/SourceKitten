@@ -8,7 +8,7 @@
 
 import Foundation
 #if SWIFT_PACKAGE
-    import SourceKit
+import SourceKit
 #endif
 
 /// Swift representation of sourcekitd_uid_t
@@ -44,6 +44,7 @@ extension UID: ExpressibleByStringLiteral {
 }
 
 extension UID: Hashable {
+#if (!swift(>=4.1) && swift(>=4.0)) || !swift(>=3.3)
     public var hashValue: Int {
         return uid.hashValue
     }
@@ -51,6 +52,7 @@ extension UID: Hashable {
     public static func == (lhs: UID, rhs: UID) -> Bool {
         return lhs.uid == rhs.uid
     }
+#endif
 }
 
 extension UID: SourceKitObjectConvertible {

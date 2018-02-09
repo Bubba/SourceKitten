@@ -11,7 +11,7 @@ import XCTest
 
 class SourceKitObjectTests: XCTestCase {
 
-    func testExample() {
+    func testDescription() {
         let path = #file
         let object: SourceKitObject = [
             "key.request": UID("source.request.editor.open"),
@@ -32,7 +32,7 @@ class SourceKitObjectTests: XCTestCase {
 extension SourceKitObjectTests {
     static var allTests: [(String, (SourceKitObjectTests) -> () throws -> Void)] {
         return [
-            ("testExample", testExample)
+            ("testDescription", testDescription)
         ]
     }
 }
