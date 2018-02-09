@@ -19,7 +19,9 @@ public struct UID {
     }
 
     public init(_ string: String) {
-        self.init(sourcekitd_uid_get_from_cstr(string)!)
+        let uid = sourcekitd_uid_get_from_cstr(string)
+        precondition(uid != nil, "Failed to create sourcekitd_uid_t from \(string)")
+        self.init(uid!)
     }
 
     public init<T>(_ rawRepresentable: T) where T: RawRepresentable, T.RawValue == String {
@@ -56,7 +58,8 @@ extension UID: Hashable {
 }
 
 extension UID: SourceKitObjectConvertible {
-    public var sourceKitObject: sourcekitd_object_t? {
-        return sourcekitd_request_uid_create(uid)
+    public func sourceKitObject() throws -> sourcekitd_object_t {
+        guard let object = sourcekitd_request_uid_create(uid) else { throw failedToCreate() }
+        return object
     }
 }

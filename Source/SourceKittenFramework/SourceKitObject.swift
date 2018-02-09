@@ -13,52 +13,70 @@ import SourceKit
 
 // MARK: - SourceKitObjectConvertible
 public protocol SourceKitObjectConvertible {
-    var sourceKitObject: sourcekitd_object_t? { get }
+    func sourceKitObject() throws -> sourcekitd_object_t
 }
 
-extension Array: SourceKitObjectConvertible {
-    public var sourceKitObject: sourcekitd_object_t? {
-        guard Element.self is SourceKitObjectConvertible.Type else {
-            fatalError("Array confirms to SourceKitObjectConvertible when Elements is SourceKitObjectConvertible!")
-        }
-        let objects: [sourcekitd_object_t?] = map { ($0 as! SourceKitObjectConvertible).sourceKitObject }
-        return sourcekitd_request_array_create(objects, objects.count)
+extension SourceKitObjectConvertible {
+    func error(_ description: String) -> SourceKitObject.Error {
+        return SourceKitObject.Error(description: description)
+    }
+
+    func failedToCreate() -> SourceKitObject.Error {
+        return error( "Failed to create sourcekitd_object_t from: \(self)")
     }
 }
 
-extension Dictionary: SourceKitObjectConvertible {
-    public var sourceKitObject: sourcekitd_object_t? {
-        let keys: [sourcekitd_uid_t?]
-        if Key.self is UID.Type {
-            keys = self.keys.map { ($0 as! UID).uid }
-        } else if Key.self is String.Type {
-            keys = self.keys.map { UID($0 as! String).uid }
-        } else {
-            fatalError("Dictionary confirms to SourceKitObjectConvertible when `Key` is `UID` or `String`!")
+extension Array: SourceKitObjectConvertible /* where Element: SourceKitObjectConvertible */ {
+    public func sourceKitObject() throws -> sourcekitd_object_t {
+        guard Element.self is SourceKitObjectConvertible.Type else {
+            throw error("Array confirms to SourceKitObjectConvertible when `Elements` is `SourceKitObjectConvertible`!")
         }
+        let objects: [sourcekitd_object_t?] = try map { try ($0 as! SourceKitObjectConvertible).sourceKitObject() }
+        guard let object = sourcekitd_request_array_create(objects, objects.count) else { throw failedToCreate() }
+        return object
+    }
+}
+
+extension Array /* : SourceKitObjectConvertible */ where Element == (UID, SourceKitObjectConvertible) {
+    public func sourceKitObject() throws -> sourcekitd_object_t {
+        let keys: [sourcekitd_uid_t?] = map { $0.0.uid }
+        let values: [sourcekitd_object_t?] = try map { try $0.1.sourceKitObject() }
+        guard let object = sourcekitd_request_dictionary_create(keys, values, count) else { throw failedToCreate() }
+        return object
+    }
+}
+
+extension Dictionary: SourceKitObjectConvertible /* where Value: SourceKitObjectConvertible */ {
+    public func sourceKitObject() throws -> sourcekitd_object_t {
         guard Value.self is SourceKitObjectConvertible.Type else {
-            fatalError("Dictionary confirms to SourceKitObjectConvertible when `Value` is `SourceKitObjectConvertible`!")
+            throw error("Dictionary confirms to SourceKitObjectConvertible when `Value` is `SourceKitObjectConvertible`!")
         }
-        let values: [sourcekitd_object_t?] = self.map { ($0.value as! SourceKitObjectConvertible).sourceKitObject }
-        return sourcekitd_request_dictionary_create(keys, values, count)
+        if Key.self is UID.Type {
+            return try map { (($0.key as! UID), $0.value as! SourceKitObjectConvertible) }.sourceKitObject()
+        } else if Key.self is String.Type {
+            return try map { (UID($0.key as! String), $0.value as! SourceKitObjectConvertible) }.sourceKitObject()
+        }
+        throw error("Dictionary confirms to `SourceKitObjectConvertible` when `Key` is `UID` or `String`!")
     }
 }
 
 extension Int: SourceKitObjectConvertible {
-    public var sourceKitObject: sourcekitd_object_t? {
-        return sourcekitd_request_int64_create(Int64(self))
+    public func sourceKitObject() throws -> sourcekitd_object_t {
+        return try Int64(self).sourceKitObject()
     }
 }
 
 extension Int64: SourceKitObjectConvertible {
-    public var sourceKitObject: sourcekitd_object_t? {
-        return sourcekitd_request_int64_create(self)
+    public func sourceKitObject() throws -> sourcekitd_object_t {
+        guard let object = sourcekitd_request_int64_create(self)  else { throw failedToCreate() }
+        return object
     }
 }
 
 extension String: SourceKitObjectConvertible {
-    public var sourceKitObject: sourcekitd_object_t? {
-        return sourcekitd_request_string_create(self)
+    public func sourceKitObject() throws -> sourcekitd_object_t {
+        guard let object = sourcekitd_request_string_create(self) else { throw failedToCreate() }
+        return object
     }
 }
 
@@ -66,14 +84,18 @@ extension String: SourceKitObjectConvertible {
 
 /// Swift representation of sourcekitd_object_t
 public class SourceKitObject: ExpressibleByArrayLiteral, ExpressibleByDictionaryLiteral, ExpressibleByIntegerLiteral, ExpressibleByStringLiteral {
-    public var sourceKitObject: sourcekitd_object_t?
+    fileprivate var _sourceKitObject: sourcekitd_object_t
 
     public init(_ sourceKitObject: sourcekitd_object_t) {
-        self.sourceKitObject = sourceKitObject
+        self._sourceKitObject = sourceKitObject
     }
 
     deinit {
-        sourceKitObject.map(sourcekitd_request_release)
+        sourcekitd_request_release(_sourceKitObject)
+    }
+
+    public struct Error: Swift.Error {
+        let description: String
     }
 
     /// Updates the value stored in the dictionary for the given key,
@@ -83,49 +105,48 @@ public class SourceKitObject: ExpressibleByArrayLiteral, ExpressibleByDictionary
     ///   - value: The new value to add to the dictionary.
     ///   - key: The key to associate with value. If key already exists in the dictionary, 
     ///     value replaces the existing associated value. If key isn't already a key of the dictionary
-    public func updateValue(_ value: SourceKitObjectConvertible, forKey key: UID) {
-        precondition(sourceKitObject != nil)
-        precondition(value.sourceKitObject != nil)
-        sourcekitd_request_dictionary_set_value(sourceKitObject!, key.uid, value.sourceKitObject!)
+    public func updateValue(_ value: SourceKitObjectConvertible, forKey key: UID) throws {
+        sourcekitd_request_dictionary_set_value(_sourceKitObject, key.uid, try value.sourceKitObject())
     }
 
-    public func updateValue(_ value: SourceKitObjectConvertible, forKey key: String) {
-        updateValue(value, forKey: UID(key))
+    public func updateValue(_ value: SourceKitObjectConvertible, forKey key: String) throws {
+        try updateValue(value, forKey: UID(key))
     }
 
-    public func updateValue<T>(_ value: SourceKitObjectConvertible, forKey key: T) where T: RawRepresentable, T.RawValue == String {
-        updateValue(value, forKey: UID(key.rawValue))
+    public func updateValue<T>(_ value: SourceKitObjectConvertible, forKey key: T) throws where T: RawRepresentable, T.RawValue == String {
+        try updateValue(value, forKey: UID(key.rawValue))
     }
 
     // ExpressibleByArrayLiteral
     public required init(arrayLiteral elements: SourceKitObject...) {
-        sourceKitObject = elements.sourceKitObject
+        do { _sourceKitObject = try elements.sourceKitObject() } catch { fatalError("\(error)") }
     }
 
     // ExpressibleByDictionaryLiteral
     public required init(dictionaryLiteral elements: (UID, SourceKitObjectConvertible)...) {
-        let keys: [sourcekitd_uid_t?] = elements.map { $0.0.uid }
-        let values: [sourcekitd_object_t?] = elements.map { $0.1.sourceKitObject }
-        sourceKitObject = sourcekitd_request_dictionary_create(keys, values, elements.count)
+        do { _sourceKitObject = try elements.sourceKitObject() } catch { fatalError("\(error)") }
     }
 
     // ExpressibleByIntegerLiteral
     public required init(integerLiteral value: IntegerLiteralType) {
-        sourceKitObject = value.sourceKitObject
+        do { _sourceKitObject = try value.sourceKitObject() } catch { fatalError("\(error)") }
     }
 
     // ExpressibleByStringLiteral
     public required init(stringLiteral value: StringLiteralType) {
-        sourceKitObject = value.sourceKitObject
+        do { _sourceKitObject = try value.sourceKitObject() } catch { fatalError("\(error)") }
     }
 }
 
-extension SourceKitObject: SourceKitObjectConvertible {}
+extension SourceKitObject: SourceKitObjectConvertible {
+    public func sourceKitObject() throws -> sourcekitd_object_t {
+        return _sourceKitObject
+    }
+}
 
 extension SourceKitObject: CustomStringConvertible {
     public var description: String {
-        guard let object = sourceKitObject else { return "" }
-        let bytes = sourcekitd_request_description_copy(object)!
+        let bytes = sourcekitd_request_description_copy(_sourceKitObject)!
         let length = Int(strlen(bytes))
         return String(bytesNoCopy: bytes, length: length, encoding: .utf8, freeWhenDone: true)!
     }

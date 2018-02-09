@@ -342,8 +342,12 @@ public enum Request {
         if offset == 0 {
             return nil
         }
-        cursorInfoRequest.updateValue(offset, forKey: SwiftDocKey.offset)
-        return try? Request.customRequest(request: cursorInfoRequest).send()
+        do {
+            try cursorInfoRequest.updateValue(offset, forKey: SwiftDocKey.offset)
+            return try Request.customRequest(request: cursorInfoRequest).send()
+        } catch {
+            return nil
+        }
     }
 
     /**
@@ -355,7 +359,7 @@ public enum Request {
     public func send() throws -> [String: SourceKitRepresentable] {
         initializeSourceKitFailable
         let request = sourcekitObject
-        let response = sourcekitd_send_request_sync(request.sourceKitObject!)
+        let response = sourcekitd_send_request_sync(try request.sourceKitObject())
         defer { sourcekitd_response_dispose(response!) }
         if sourcekitd_response_is_error(response!) {
             let error = Request.Error(response: response!)
