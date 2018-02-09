@@ -46,9 +46,15 @@ extension Array /* : SourceKitObjectConvertible */ where Element == (UID, Source
     }
 }
 
+extension Bool: SourceKitObjectConvertible {
+    public func sourceKitObject() throws -> sourcekitd_object_t {
+        return try (self ? 1 : 0).sourceKitObject()
+    }
+}
+
 extension Dictionary: SourceKitObjectConvertible /* where Value: SourceKitObjectConvertible */ {
     public func sourceKitObject() throws -> sourcekitd_object_t {
-        guard Value.self is SourceKitObjectConvertible.Type else {
+        guard Value.self is SourceKitObjectConvertible.Type || first?.value is SourceKitObjectConvertible else {
             throw error("Dictionary confirms to SourceKitObjectConvertible when `Value` is `SourceKitObjectConvertible`!")
         }
         if Key.self is UID.Type {
@@ -83,7 +89,8 @@ extension String: SourceKitObjectConvertible {
 // MARK: - SourceKitObject
 
 /// Swift representation of sourcekitd_object_t
-public class SourceKitObject: ExpressibleByArrayLiteral, ExpressibleByDictionaryLiteral, ExpressibleByIntegerLiteral, ExpressibleByStringLiteral {
+public final class SourceKitObject: ExpressibleByArrayLiteral, ExpressibleByBooleanLiteral, ExpressibleByDictionaryLiteral, ExpressibleByIntegerLiteral, ExpressibleByStringLiteral {
+    // swiftlint:disable:previous line_length
     fileprivate var _sourceKitObject: sourcekitd_object_t
 
     public init(_ sourceKitObject: sourcekitd_object_t) {
@@ -120,6 +127,11 @@ public class SourceKitObject: ExpressibleByArrayLiteral, ExpressibleByDictionary
     // ExpressibleByArrayLiteral
     public required init(arrayLiteral elements: SourceKitObject...) {
         do { _sourceKitObject = try elements.sourceKitObject() } catch { fatalError("\(error)") }
+    }
+
+    // ExpressibleByBooleanLiteral
+    public required init(booleanLiteral value: BooleanLiteralType) {
+        do { _sourceKitObject = try value.sourceKitObject() } catch { fatalError("\(error)") }
     }
 
     // ExpressibleByDictionaryLiteral
