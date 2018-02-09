@@ -13,16 +13,29 @@ class SourceKitObjectTests: XCTestCase {
 
     func testDescription() {
         let path = #file
+        let line = 10
+        let indentWidth = 4
+        let useTabs = true
         let object: SourceKitObject = [
-            "key.request": UID("source.request.editor.open"),
+            "key.request": UID("source.request.editor.formattext"),
             "key.name": path,
-            "key.sourcefile": path
+            "key.line": line,
+            "key.editor.format.options": [
+                "key.editor.format.indentwidth": indentWidth,
+                "key.editor.format.tabwidth": indentWidth,
+                "key.editor.format.usetabs": useTabs ? 1 : 0
+            ]
         ]
         let expected = """
             {
-              key.request: source.request.editor.open,
+              key.request: source.request.editor.formattext,
               key.name: \"\(#file)\",
-              key.sourcefile: \"\(#file)\"
+              key.line: 10,
+              key.editor.format.options: {
+                key.editor.format.indentwidth: \(indentWidth),
+                key.editor.format.tabwidth: \(indentWidth),
+                key.editor.format.usetabs: 1
+              }
             }
             """
         XCTAssertEqual(object.description, expected)
