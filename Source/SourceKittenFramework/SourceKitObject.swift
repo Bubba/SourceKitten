@@ -65,11 +65,15 @@ extension String: SourceKitObjectConvertible {
 // MARK: - SourceKitObject
 
 /// Swift representation of sourcekitd_object_t
-public struct SourceKitObject {
-    public let sourceKitObject: sourcekitd_object_t?
+public class SourceKitObject: ExpressibleByArrayLiteral, ExpressibleByDictionaryLiteral, ExpressibleByIntegerLiteral, ExpressibleByStringLiteral {
+    public var sourceKitObject: sourcekitd_object_t?
 
     public init(_ sourceKitObject: sourcekitd_object_t) {
         self.sourceKitObject = sourceKitObject
+    }
+
+    deinit {
+        sourceKitObject.map(sourcekitd_request_release)
     }
 
     /// Updates the value stored in the dictionary for the given key,
@@ -92,6 +96,28 @@ public struct SourceKitObject {
     public func updateValue<T>(_ value: SourceKitObjectConvertible, forKey key: T) where T: RawRepresentable, T.RawValue == String {
         updateValue(value, forKey: UID(key.rawValue))
     }
+
+    // ExpressibleByArrayLiteral
+    public required init(arrayLiteral elements: SourceKitObject...) {
+        sourceKitObject = elements.sourceKitObject
+    }
+
+    // ExpressibleByDictionaryLiteral
+    public required init(dictionaryLiteral elements: (UID, SourceKitObjectConvertible)...) {
+        let keys: [sourcekitd_uid_t?] = elements.map { $0.0.uid }
+        let values: [sourcekitd_object_t?] = elements.map { $0.1.sourceKitObject }
+        sourceKitObject = sourcekitd_request_dictionary_create(keys, values, elements.count)
+    }
+
+    // ExpressibleByIntegerLiteral
+    public required init(integerLiteral value: IntegerLiteralType) {
+        sourceKitObject = value.sourceKitObject
+    }
+
+    // ExpressibleByStringLiteral
+    public required init(stringLiteral value: StringLiteralType) {
+        sourceKitObject = value.sourceKitObject
+    }
 }
 
 extension SourceKitObject: SourceKitObjectConvertible {}
@@ -102,31 +128,5 @@ extension SourceKitObject: CustomStringConvertible {
         let bytes = sourcekitd_request_description_copy(object)!
         let length = Int(strlen(bytes))
         return String(bytesNoCopy: bytes, length: length, encoding: .utf8, freeWhenDone: true)!
-    }
-}
-
-extension SourceKitObject: ExpressibleByArrayLiteral {
-    public init(arrayLiteral elements: SourceKitObject...) {
-        sourceKitObject = elements.sourceKitObject
-    }
-}
-
-extension SourceKitObject: ExpressibleByDictionaryLiteral {
-    public init(dictionaryLiteral elements: (UID, SourceKitObjectConvertible)...) {
-        let keys: [sourcekitd_uid_t?] = elements.map { $0.0.uid }
-        let values: [sourcekitd_object_t?] = elements.map { $0.1.sourceKitObject }
-        sourceKitObject = sourcekitd_request_dictionary_create(keys, values, elements.count)
-    }
-}
-
-extension SourceKitObject: ExpressibleByIntegerLiteral {
-    public init(integerLiteral value: IntegerLiteralType) {
-        sourceKitObject = value.sourceKitObject
-    }
-}
-
-extension SourceKitObject: ExpressibleByStringLiteral {
-    public init(stringLiteral value: StringLiteralType) {
-       sourceKitObject = value.sourceKitObject
     }
 }
